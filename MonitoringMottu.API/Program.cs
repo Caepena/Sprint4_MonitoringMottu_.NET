@@ -1,11 +1,13 @@
 ﻿using System.Reflection;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
+using MonitoringMottu.API.Extensions;
 using MonitoringMottu.Domain.Interfaces;
 using MonitoringMottu.Infrastructure.Context;
 using MonitoringMottu.Infrastructure.Repositories;
@@ -18,16 +20,19 @@ namespace MonitoringMottu.API
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            // 🔹 Configurações básicas
             builder.Configuration
                 .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
                 .AddEnvironmentVariables();
 
+            // 🔹 Controllers + JSON
             builder.Services.AddControllers()
                 .AddJsonOptions(options =>
                 {
                     options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
                 });
 
+            // 🔹 Swagger
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen(x =>
             {
@@ -47,25 +52,40 @@ namespace MonitoringMottu.API
                 x.IncludeXmlComments(xmlPath);
             });
 
+            // 🔹 Banco Oracle
             builder.Services.AddDbContext<MonitoringMottuContext>(options =>
-                options.UseOracle(builder.Configuration.GetConnectionString("DefaultConnection")));
+                options.UseOracle(builder.Configuration.GetConnectionString("OracleConnection")));
 
-            // Registrar repositório genérico para todas as entidades
+            // 🔹 Repositórios
             builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
             builder.Services.AddScoped<IMotoRepository, MotoRepository>();
             builder.Services.AddScoped<IGaragemRepository, GaragemRepository>();
 
+            // 🔹 HealthChecks (antes do Build!)
+            builder.Services.AddChecks(builder.Configuration);
+
+            // 🔹 Build
             var app = builder.Build();
 
+            // 🔹 Middleware padrão
             if (app.Environment.IsDevelopment())
             {
                 app.UseSwagger();
                 app.UseSwaggerUI();
             }
 
-            //app.UseHttpsRedirection();
+            app.UseHttpsRedirection();
+
             app.UseAuthorization();
+
+            // 🔹 Endpoints
             app.MapControllers();
+
+            app.MapHealthChecks("/health-check", new HealthCheckOptions
+            {
+                ResponseWriter = HealthCheckExtensions.WriteResponse
+            });
+
             app.Run();
         }
     }
